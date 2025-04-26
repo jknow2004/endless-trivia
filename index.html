@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Endless Trivia</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            fade: 'fadeIn 0.3s ease-in-out',
+            pop: 'pop 0.5s ease'
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: 0 },
+              '100%': { opacity: 1 }
+            },
+            pop: {
+              '0%': { transform: 'scale(0.8)', opacity: 0 },
+              '100%': { transform: 'scale(1)', opacity: 1 }
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-100 font-sans">
+<div id="app" class="p-4 max-w-5xl mx-auto">
+  <div id="home" class="animate-fade">
+    <h1 class="text-4xl font-bold text-center mb-2">Endless Trivia</h1>
+    <p class="text-center mb-8 text-gray-600">Test your knowledge across various categories</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+      <div @click="selectCategory('Shuffle All')" class="card cursor-pointer bg-gradient-to-r from-purple-400 to-pink-500 text-white p-6 rounded-xl text-center hover:from-pink-500 hover:to-purple-400">
+        <div class="text-2xl mb-2">🔀</div>
+        <h2 class="text-xl font-semibold">Shuffle All</h2>
+        <p>Mix questions from all categories</p>
+      </div>
+      <div v-for="category in categories" :key="category.name" @click="selectCategory(category.name)"
+           class="card cursor-pointer bg-white p-6 rounded-xl text-center transition-all hover:bg-indigo-100">
+        <div class="text-2xl mb-2">{{ category.icon }}</div>
+        <h2 class="text-xl font-semibold">{{ category.name }}</h2>
+        <p class="text-gray-500">{{ category.desc }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="game" class="hidden animate-fade">
+    <div class="flex justify-between items-center mb-4">
+      <button @click="goHome" class="text-blue-500 underline">Back to Categories</button>
+      <div class="flex items-center space-x-4">
+        <div class="flex items-center">
+          <label for="quickfireToggle" class="mr-2 text-gray-600 font-medium">Quickfire</label>
+          <div class="relative">
+            <input id="quickfireToggle" type="checkbox" v-model="quickfire" @change="toggleQuickfire" class="sr-only">
+            <div :class="{'bg-blue-500': quickfire, 'bg-gray-300': !quickfire }" class="block w-10 h-6 rounded-full transition duration-300"></div>
+            <div :class="{'translate-x-5': quickfire, 'translate-x-1': !quickfire }" class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-md transform transition duration-300"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="quickfire" class="text-center mb-4">
+      <div class="text-2xl">{{ '❤️'.repeat(lives) }}</div>
+      <div class="text-lg font-semibold">Score: {{ score }}</div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow">
+      <p class="text-xl font-medium mb-4">{{ currentQuestion.question }}</p>
+      <div class="space-y-2">
+        <button v-for="option in currentQuestion.options" :key="option" @click="selectAnswer(option)"
+                :class="answerClass(option)"
+                class="w-full text-left p-3 rounded border border-gray-300 hover:bg-gray-100">
+          {{ option }}
+        </button>
+      </div>
+      <div class="mt-4 text-center">
+        <button @click="nextQuestion" :disabled="!selectedAnswer"
+                class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed">
+          Next Question
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="gameOver" class="hidden text-center animate-fade">
+    <h2 class="text-4xl font-bold animate-pop mb-2">Game Over 😢</h2>
+    <p class="text-xl mb-4">Final Score: <span class="font-bold text-blue-600 text-2xl">{{ score }}</span></p>
+    <p v-if="highScore !== null" class="mb-2 text-gray-600">High Score: <span class="font-semibold">{{ highScore }}</span></p>
+    <p class="italic text-gray-500 mb-4">{{ score >= highScore ? 'You’re a Trivia Titan!' : 'So close! Try again!' }}</p>
+    <button @click="restartGame" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 mr-2">Play Again</button>
+    <button @click="goHome" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Back to Home</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+<script>
+function shuffle(array) {
+  let currentIndex = array.length, randomIndex;
+  while (currentIndex !== 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+  }
+  return array;
+}
+
+const app = new Vue({
+  el: '#app',
+  data: {
+    categories: [
+      { name: 'Movies', icon: '🎬', desc: 'Test your film knowledge', id: 11 },
+      { name: 'TV Shows', icon: '📺', desc: 'From classics to current hits', id: 14 },
+      { name: 'Music', icon: '🎵', desc: 'All music eras', id: 12 },
+      { name: 'Sports', icon: '⚽', desc: 'Sports trivia', id: 21 },
+      { name: 'Video Games', icon: '🎮', desc: 'Retro to modern', id: 15 },
+      { name: 'Books', icon: '📚', desc: 'Literature and more', id: 10 },
+      { name: 'Science', icon: '🔬', desc: 'Scientific facts', id: 17 }
+    ],
+    fullQuestionBank: {},
+    currentQuestions: [],
+    currentCategory: '',
+    currentCategoryId: null,
+    questionIndex: 0,
+    currentQuestion: {},
+    quickfire: false,
+    lives: 3,
+    score: 0,
+    selectedAnswer: '',
+    correctAnswer: '',
+    highScore: null
+  },
+  methods: {
+    selectCategory(categoryName) {
+      this.currentCategory = categoryName;
+      this.currentCategoryId = this.categories.find(c => c.name === categoryName)?.id || null;
+      this.score = 0;
+      this.lives = 3;
+      this.quickfire = false;
+      this.selectedAnswer = '';
+      this.correctAnswer = '';
+      this.loadQuestions();
+      this.show('game');
+    },
+    loadQuestions() {
+      let url = 'https://opentdb.com/api.php?amount=50&type=multiple';
+      if (this.currentCategory !== 'Shuffle All' && this.currentCategoryId) {
+        url += `&category=${this.currentCategoryId}`;
+      }
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          const parsed = data.results.map(q => {
+            const decodedQuestion = this.decodeHtml(q.question);
+            const correct = this.decodeHtml(q.correct_answer);
+            const options = [...q.incorrect_answers.map(this.decodeHtml), correct];
+            return {
+              question: decodedQuestion,
+              options: shuffle(options),
+              answer: correct
+            };
+          });
+          this.fullQuestionBank[this.currentCategory] = parsed;
+          this.shuffleQuestions();
+          this.questionIndex = 0;
+          this.currentQuestion = this.currentQuestions[this.questionIndex];
+        })
+        .catch(err => {
+          console.error('Failed to load questions:', err);
+          this.fullQuestionBank[this.currentCategory] = [];
+        });
+    },
+    shuffleQuestions() {
+      const bank = this.fullQuestionBank[this.currentCategory];
+      this.currentQuestions = shuffle([...bank]);
+    },
+    decodeHtml(html) {
+      const txt = document.createElement('textarea');
+      txt.innerHTML = html;
+      return txt.value;
+    },
+    selectAnswer(option) {
+      if (this.selectedAnswer) return;
+      this.selectedAnswer = option;
+      this.correctAnswer = this.currentQuestion.answer;
+      if (option === this.correctAnswer) {
+        this.score++;
+      } else if (this.quickfire) {
+        this.lives--;
+        if (this.lives <= 0) {
+          this.endGame();
+        }
+      }
+    },
+    nextQuestion() {
+      if (!this.selectedAnswer) return;
+      this.selectedAnswer = '';
+      this.correctAnswer = '';
+      this.questionIndex++;
+      if (this.questionIndex >= this.currentQuestions.length) {
+        this.shuffleQuestions();
+        this.questionIndex = 0;
+      }
+      this.currentQuestion = this.currentQuestions[this.questionIndex];
+    },
+    answerClass(option) {
+      if (!this.selectedAnswer) return '';
+      if (option === this.correctAnswer) return 'bg-green-200';
+      if (option === this.selectedAnswer) return 'bg-red-200';
+      return '';
+    },
+    toggleQuickfire() {
+      this.lives = 3;
+      this.score = 0;
+    },
+    endGame() {
+      const savedScore = localStorage.getItem('highScore');
+      this.highScore = savedScore ? parseInt(savedScore) : 0;
+      if (this.score > this.highScore) {
+        this.highScore = this.score;
+        localStorage.setItem('highScore', this.score);
+      }
+      this.show('gameOver');
+    },
+    restartGame() {
+      this.selectCategory(this.currentCategory);
+    },
+    goHome() {
+      this.show('home');
+    },
+    show(section) {
+      document.querySelectorAll('#home, #game, #gameOver').forEach(el => el.classList.add('hidden'));
+      document.getElementById(section).classList.remove('hidden');
+    }
+  }
+});
+</script>
+</body>
+</html>
