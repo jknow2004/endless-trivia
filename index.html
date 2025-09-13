@@ -30,6 +30,11 @@ Endless Trivia – Vue 2 (Geography added, no score, fixed modal placement)
 </head>
 <body class="font-sans text-gray-800">
   <div id="app" v-cloak class="p-4 max-w-5xl mx-auto">
+    <noscript>
+      <div class="bg-yellow-100 border border-yellow-300 text-yellow-800 p-4 rounded-xl mb-4">
+        This app needs JavaScript enabled. Please enable JavaScript and reload.
+      </div>
+    </noscript>
     <!-- Home Screen -->
     <div v-if="screen === 'home'" class="animate-fade">
       <h1 class="text-5xl font-extrabold text-center mb-2 text-indigo-600 drop-shadow-sm">Endless Trivia</h1>
@@ -77,8 +82,13 @@ Endless Trivia – Vue 2 (Geography added, no score, fixed modal placement)
         <p class="text-2xl font-bold mb-2" :class="feedbackIsCorrect ? 'text-green-600' : 'text-red-600'">
           {{ feedbackMessage }}
         </p>
-        <p v-if="feedbackIsCorrect" class="text-sm text-gray-500 mb-4">Nice work — keep it going.</p>
-        <p v-else class="text-sm text-gray-500 mb-4">You'll nail the next one.</p>
+        <template v-if="feedbackIsCorrect">
+        <p class="text-sm text-gray-500 mb-4">Nice work — keep it going.</p>
+      </template>
+      <template v-else>
+        <p class="text-sm text-gray-500">You'll nail the next one.</p>
+        <p class="text-sm text-gray-700 mb-4">Correct answer: <span class="font-semibold">{{ correctAnswer }}</span></p>
+      </template>
         <div class="flex items-center justify-center gap-3">
           <button @click="handleNextFromModal" class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600">Next Question</button>
           <button @click="goHomeFromModal" class="bg-gray-100 text-gray-800 px-4 py-2 rounded hover:bg-gray-200 border">Back to Home</button>
@@ -87,12 +97,23 @@ Endless Trivia – Vue 2 (Geography added, no score, fixed modal placement)
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.min.js"></script>
   <script>
+  (function () {
     function shuffle(array) {
-      let i = array.length, r;
-      while (i) { r = Math.floor(Math.random() * i--); [array[i], array[r]] = [array[r], array[i]]; }
+      var i = array.length, r;
+      while (i) { r = Math.floor(Math.random() * i--); var t = array[i]; array[i] = array[r]; array[r] = t; }
       return array;
+    }
+    function showCdnError(msg) {
+      var app = document.getElementById('app');
+      if (!app) return;
+      app.removeAttribute('v-cloak');
+      app.innerHTML = '<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl">' + msg + '</div>';
+    }
+    if (!window.Vue) {
+      showCdnError('Vue failed to load from the CDN. Check your internet connection and try again.');
+      return;
     }
 
     new Vue({
@@ -107,7 +128,8 @@ Endless Trivia – Vue 2 (Geography added, no score, fixed modal placement)
           { name: 'Video Games', icon: '🎮', desc: 'Retro to modern', id: 15 },
           { name: 'Books', icon: '📚', desc: 'Literature and more', id: 10 },
           { name: 'Science', icon: '🔬', desc: 'Scientific facts', id: 17 },
-          { name: 'Geography', icon: '🌍', desc: 'World places & facts', id: 22 }
+          { name: 'Geography', icon: '🌍', desc: 'World places & facts', id: 22 },
+          { name: 'History', icon: '🏺', desc: 'Past events & people', id: 23 }
         ],
         fullQuestionBank: {},
         currentQuestions: [],
@@ -121,23 +143,23 @@ Endless Trivia – Vue 2 (Geography added, no score, fixed modal placement)
         feedbackMessage: '',
         feedbackIsCorrect: false
       },
-      mounted() {
-        // Ensure no popup at start
+      mounted: function () {
         this.showFeedback = false;
       },
       methods: {
-        selectCategory(categoryName) {
+        selectCategory: function (categoryName) {
           this.currentCategory = categoryName;
-          this.currentCategoryId = this.categories.find(c => c.name === categoryName)?.id || null;
+          var id = null; for (var i = 0; i < this.categories.length; i++) { if (this.categories[i].name === categoryName) { id = this.categories[i].id; break; } }
+          this.currentCategoryId = id;
           this.selectedAnswer = '';
           this.correctAnswer = '';
-          this.showFeedback = false; // guard against stale state
+          this.showFeedback = false;
           this.loadQuestions();
           this.screen = 'game';
         },
-        async loadQuestions() {
+        loadQuestions: async function () {
           try {
-            const parsed = await this.fetchQuestionsBatch();
+            var parsed = await this.fetchQuestionsBatch();
             if (!parsed.length) {
               alert('No questions available right now. Please pick another category or try again.');
               this.screen = 'home';
@@ -152,51 +174,77 @@ Endless Trivia – Vue 2 (Geography added, no score, fixed modal placement)
             this.screen = 'home';
           }
         },
-        buildApiUrl() {
-          let url = 'https://opentdb.com/api.php?amount=50&type=multiple';
+        buildApiUrl: function () {
+          var url = 'https://opentdb.com/api.php?amount=50&type=multiple';
           if (this.currentCategory !== 'Shuffle All' && this.currentCategoryId) {
-            url += `&category=${this.currentCategoryId}`;
+            url += '&category=' + this.currentCategoryId;
           }
           return url;
         },
-        async fetchQuestionsBatch() {
-          const res = await fetch(this.buildApiUrl());
-          const data = await res.json();
-          return (data.results || []).map(q => {
-            const decodedQuestion = this.decodeHtml(q.question);
-            const correct = this.decodeHtml(q.correct_answer);
-            const options = [...q.incorrect_answers.map(this.decodeHtml), correct];
-            return { question: decodedQuestion, options: shuffle(options), answer: correct };
-          });
+        fetchQuestionsBatch: async function () {
+          // First attempt: multiple-choice, larger batch
+          var primaryUrl = this.buildApiUrl();
+          var parsed = await this._fetchAndParse(primaryUrl);
+          if (parsed.length) return parsed;
+          // Fallback: smaller batch, no type filter
+          var fallbackUrl = 'https://opentdb.com/api.php?amount=25' + (this.currentCategoryId ? ('&category=' + this.currentCategoryId) : '');
+          return await this._fetchAndParse(fallbackUrl);
         },
-        async fetchMoreQuestions() {
+        fetchMoreQuestions: async function () {
           try {
-            const parsed = await this.fetchQuestionsBatch();
-            if (parsed.length) this.currentQuestions = shuffle([...parsed]);
+            if (this.currentCategory === 'Finish the Lyrics') {
+              var bank = this.buildLyricsBank();
+              this.currentQuestions = shuffle(bank.slice());
+              return;
+            }
+            var parsed = await this.fetchQuestionsBatch();
+            if (parsed.length) this.currentQuestions = shuffle(parsed.slice());
           } catch (e) { console.error('Failed to fetch more questions:', e); }
         },
-        decodeHtml(html) {
-          const txt = document.createElement('textarea');
-          txt.innerHTML = html; return txt.value;
+        decodeHtml: function (html) { var txt = document.createElement('textarea'); txt.innerHTML = html; return txt.value; },
+        _fetchAndParse: async function (url) {
+          try {
+            var res = await fetch(url);
+            var data = await res.json();
+            var self = this;
+            var results = (data && data.results) ? data.results : [];
+            return results.map(function (q) {
+              var dq = self.decodeHtml(q.question);
+              var ans = self.decodeHtml(q.correct_answer);
+              var opts = q.incorrect_answers.map(self.decodeHtml).concat(ans);
+              return { question: dq, options: shuffle(opts), answer: ans };
+            });
+          } catch (e) { console.error('fetch failed', e); return []; }
         },
-        selectAnswer(option) {
+        buildLyricsBank: function () {
+          var items = [
+            { prompt: 'Mary had a little ____', answer: 'lamb', distractors: ['cat','dog','bird'] },
+            { prompt: 'Twinkle, twinkle, little ____', answer: 'star', distractors: ['car','moon','cloud'] },
+            { prompt: 'Baa, baa, black ____', answer: 'sheep', distractors: ['goat','cow','horse'] },
+            { prompt: 'Row, row, row your ____', answer: 'boat', distractors: ['car','bike','plane'] },
+            { prompt: 'London Bridge is ____', answer: 'falling down', distractors: ['standing tall','made of stone','very old'] },
+            { prompt: 'Old MacDonald had a ____', answer: 'farm', distractors: ['barn','dog','song'] },
+            { prompt: 'Ring around the ____', answer: 'rosie', distractors: ['fire','tree','rose'] },
+            { prompt: 'The itsy bitsy ____', answer: 'spider', distractors: ['ant','beetle','fly'] },
+            { prompt: 'Hickory dickory ____', answer: 'dock', distractors: ['clock','rock','sock'] },
+            { prompt: "If you're happy and you ____ it", answer: 'know', distractors: ['feel','love','see'] }
+          ];
+          return items.map(function (i) {
+            return { question: i.prompt, options: shuffle([i.answer].concat(i.distractors)), answer: i.answer };
+          });
+        },
+        selectAnswer: function (option) {
           if (this.selectedAnswer) return;
           this.selectedAnswer = option;
           this.correctAnswer = this.currentQuestion.answer;
-          const isCorrect = option === this.correctAnswer;
+          var isCorrect = option === this.correctAnswer;
           this.feedbackIsCorrect = isCorrect;
           this.feedbackMessage = isCorrect ? this.getRandomRightMessage() : this.getRandomWrongMessage();
           this.showFeedback = true;
         },
-        handleNextFromModal() {
-          this.showFeedback = false;
-          this.nextQuestion();
-        },
-        goHomeFromModal() {
-          this.showFeedback = false;
-          this.goHome();
-        },
-        async nextQuestion() {
+        handleNextFromModal: function () { this.showFeedback = false; this.nextQuestion(); },
+        goHomeFromModal: function () { this.showFeedback = false; this.goHome(); },
+        nextQuestion: async function () {
           this.selectedAnswer = '';
           this.correctAnswer = '';
           this.questionIndex++;
@@ -206,23 +254,24 @@ Endless Trivia – Vue 2 (Geography added, no score, fixed modal placement)
           }
           this.currentQuestion = this.currentQuestions[this.questionIndex];
         },
-        answerClass(option) {
+        answerClass: function (option) {
           if (!this.selectedAnswer) return '';
           if (option === this.correctAnswer) return 'bg-green-200 border-green-400';
           if (option === this.selectedAnswer) return 'bg-red-200 border-red-400';
           return '';
         },
-        getRandomWrongMessage() {
-          const messages = ['Try again!', 'Nice try!', 'Oops!', 'Not quite!', 'Almost!'];
+        getRandomWrongMessage: function () {
+          var messages = ['Try again!', 'Nice try!', 'Oops!', 'Not quite!', 'Almost!'];
           return messages[Math.floor(Math.random() * messages.length)];
         },
-        getRandomRightMessage() {
-          const messages = ['Good job!', 'Great work!', 'Well done!', 'Nice one!', 'Correct!'];
+        getRandomRightMessage: function () {
+          var messages = ['Good job!', 'Great work!', 'Well done!', 'Nice one!', 'Correct!'];
           return messages[Math.floor(Math.random() * messages.length)];
         },
-        goHome() { this.showFeedback = false; this.screen = 'home'; }
+        goHome: function () { this.showFeedback = false; this.screen = 'home'; }
       }
     });
+  })();
   </script>
 </body>
 </html>
